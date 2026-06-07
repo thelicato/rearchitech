@@ -1,0 +1,916 @@
+* {
+  box-sizing: border-box;
+}
+
+:root {
+  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+
+  --canvas-bg: #0f1116;
+  --panel-bg: rgba(23, 27, 36, 0.92);
+  --panel-border: rgba(255,255,255,0.12);
+  --panel-text: rgba(255,255,255,0.92);
+  --panel-muted: rgba(255,255,255,0.58);
+  --field-bg: rgba(255,255,255,0.07);
+  --field-border: rgba(255,255,255,0.14);
+  --accent: #15c1a3;
+
+  --node-bg: #4b5c6b;          /* normal grey box */
+  --node-text: rgba(255,255,255,0.90);
+  --node-subtext: rgba(255,255,255,0.70);
+  --node-border: rgba(255,255,255,0.12);
+
+  --node-dark-bg: #1f2028;     /* darker node */
+
+  --node-green-bg: #15c1a3;    /* green node */
+  --node-green-border: rgba(0,0,0,0.15);
+
+  --node-red-bg: #dd4a21;      /* red node */
+  --node-red-border: rgba(0,0,0,0.15);
+
+  --shadow: 0 10px 24px rgba(0,0,0,0.45);
+  --shadow-soft: 0 6px 16px rgba(0,0,0,0.35);
+
+  --radius: 10px;
+
+  --handle: rgba(255,255,255,0.45);
+  --handle-border: rgba(0,0,0,0.25);
+
+  /* edges */
+  --edge-stroke: #4b5c6b;  /* line */
+  --edge-marker: #4b5c6b;  /* arrowhead (solid) */
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  overflow: hidden;
+}
+
+.appShell {
+  width: 100%;
+  height: 100vh;
+  background: var(--canvas-bg);
+}
+
+.flowCanvas {
+  position: relative;
+  background: var(--canvas-bg);
+  width: 100%;
+  height: 100vh;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+}
+
+.reactFlowSurface {
+  width: 100%;
+  height: 100%;
+}
+
+/* Shared “box node” shell */
+.rfNode {
+  min-width: 210px;
+  max-width: 360px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--node-border);
+  background: var(--node-bg);
+  color: var(--node-text);
+  box-shadow: var(--shadow-soft);
+}
+
+.rfNode__title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  line-height: 1.2;
+  white-space: pre-line; /* allow \n in title */
+}
+
+.rfNode__title--center {
+  text-align: center;
+}
+
+.rfNode__subtitle {
+  margin-top: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--node-subtext);
+  line-height: 1.25;
+  white-space: pre-line;
+}
+
+.rfNode__content {
+  margin-top: 8px;
+  white-space: pre-line;
+}
+
+.rfNode__image {
+  display: block;
+  width: 100%;
+  max-height: 150px;
+  margin-top: 8px;
+  margin-bottom: 8px;
+  border-radius: 8px;
+  object-fit: contain;
+  background: rgba(0,0,0,0.16);
+}
+
+.rfNode__image--plain {
+  background: transparent;
+}
+
+/* Darker node */
+.rfNode--dark {
+  background: var(--node-dark-bg);
+  border-color: var(--node-dark-border);
+}
+
+/* Green callout */
+.rfNode--green {
+  background: var(--node-green-bg);
+  border-color: var(--node-green-border);
+  color: rgba(255,255,255,0.95);
+  box-shadow: var(--shadow);
+}
+.rfNode--green .rfNode__subtitle {
+  color: rgba(255,255,255,0.85);
+}
+
+/* Red callout */
+.rfNode--red {
+  background: var(--node-red-bg);
+  border-color: var(--node-red-border);
+  color: rgba(255,255,255,0.95);
+  box-shadow: var(--shadow);
+}
+.rfNode--red .rfNode__subtitle {
+  color: rgba(255,255,255,0.85);
+}
+
+.rfNode--custom .rfNode__subtitle {
+  color: inherit;
+  opacity: 0.78;
+}
+
+/* Diamond decision node */
+.rfDiamondWrap {
+  position: relative;
+  width: 50px;
+  height: 50px;
+}
+
+.rfDiamond {
+  position: relative;
+  z-index: 1;
+  width: 50px;
+  height: 50px;
+  border-radius: 12px;
+  background: var(--node-bg);
+  border: 1px solid var(--node-border);
+  box-shadow: var(--shadow-soft);
+  transform: rotate(45deg);
+  display: grid;
+  place-items: center;
+}
+
+.rfDiamond__label {
+  transform: rotate(-45deg);
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--node-text);
+  text-align: center;
+  padding: 0 8px;
+  line-height: 1.1;
+}
+
+.rfGroupNode {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-width: 180px;
+  min-height: 120px;
+  border: 2px solid;
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08), 0 10px 26px rgba(0,0,0,0.24);
+  overflow: visible;
+}
+
+.rfGroupTitle {
+  position: absolute;
+  z-index: 1;
+  max-width: min(280px, calc(100% - 24px));
+  padding: 4px 8px;
+  border: 1px solid;
+  border-radius: 6px;
+  box-shadow: var(--shadow-soft);
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: 0;
+  line-height: 1.15;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.rfGroupTitle--top-left.rfGroupTitle--inside {
+  top: 8px;
+  left: 8px;
+}
+
+.rfGroupTitle--top-center.rfGroupTitle--inside {
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.rfGroupTitle--top-right.rfGroupTitle--inside {
+  top: 8px;
+  right: 8px;
+}
+
+.rfGroupTitle--top-left.rfGroupTitle--outside {
+  top: -8px;
+  left: 8px;
+  transform: translateY(-100%);
+}
+
+.rfGroupTitle--top-center.rfGroupTitle--outside {
+  top: -8px;
+  left: 50%;
+  transform: translate(-50%, -100%);
+}
+
+.rfGroupTitle--top-right.rfGroupTitle--outside {
+  top: -8px;
+  right: 8px;
+  transform: translateY(-100%);
+}
+
+.rfGroupTitle--bottom-left.rfGroupTitle--inside {
+  bottom: 8px;
+  left: 8px;
+}
+
+.rfGroupTitle--bottom-center.rfGroupTitle--inside {
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.rfGroupTitle--bottom-right.rfGroupTitle--inside {
+  right: 8px;
+  bottom: 8px;
+}
+
+.rfGroupTitle--bottom-left.rfGroupTitle--outside {
+  bottom: -8px;
+  left: 8px;
+  transform: translateY(100%);
+}
+
+.rfGroupTitle--bottom-center.rfGroupTitle--outside {
+  bottom: -8px;
+  left: 50%;
+  transform: translate(-50%, 100%);
+}
+
+.rfGroupTitle--bottom-right.rfGroupTitle--outside {
+  bottom: -8px;
+  right: 8px;
+  transform: translateY(100%);
+}
+
+.rfTextNode {
+  min-width: 56px;
+  max-width: 420px;
+  padding: 4px 6px;
+  color: #f5f7fb;
+  font-weight: 750;
+  line-height: 1.2;
+  text-shadow: 0 2px 10px rgba(0,0,0,0.45);
+  white-space: pre-wrap;
+}
+
+.react-flow__node.selected .rfTextNode {
+  outline: 2px solid rgba(25,195,125,0.55);
+  outline-offset: 4px;
+  border-radius: 6px;
+}
+
+/* Handles */
+.react-flow__handle {
+  width: 10px;
+  height: 10px;
+  border: 2px solid rgba(0,0,0,0.34);
+  background: #f4fffb;
+  opacity: 0.76;
+  transition: opacity 140ms ease, background-color 140ms ease;
+}
+
+.react-flow__node:hover .react-flow__handle,
+.react-flow__node.selected .react-flow__handle {
+  background: var(--accent);
+  opacity: 1;
+}
+
+.rfDiamondWrap .react-flow__handle {
+  z-index: 2;
+}
+
+.appShell--hideConnectionPoints .react-flow__handle,
+.appShell--hideConnectionPoints .react-flow__node:hover .react-flow__handle,
+.appShell--hideConnectionPoints .react-flow__node.selected .react-flow__handle {
+  opacity: 0;
+}
+
+/* === Edge styling === */
+.rfEdgePath {
+  stroke: var(--edge-stroke);
+  stroke-width: 2 !important;
+  transition: stroke 140ms ease;
+}
+
+.react-flow__edge:hover .rfEdgePath,
+.react-flow__edge.selected .rfEdgePath {
+  stroke: var(--accent) !important;
+}
+
+.edgeOverlay {
+  position: absolute;
+  z-index: 20;
+  display: grid;
+  min-width: max-content;
+  place-items: center;
+  color: var(--edge-stroke);
+  pointer-events: none;
+}
+
+.edgeDeleteButton {
+  position: relative;
+  z-index: 20;
+  grid-area: 1 / 1;
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 1px solid rgba(255,255,255,0.16);
+  border-radius: 50%;
+  background: #dd4a21;
+  color: white;
+  box-shadow: var(--shadow-soft);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
+  pointer-events: all;
+  cursor: pointer;
+}
+
+.edgeDeleteButton:hover {
+  background: #f05a32;
+}
+
+.nodeDeleteToolbar {
+  z-index: 2000 !important;
+  pointer-events: none;
+}
+
+.nodeDeleteButton {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 1px solid rgba(255,255,255,0.18);
+  border-radius: 50%;
+  background: #dd4a21;
+  color: white;
+  box-shadow: var(--shadow-soft);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
+  pointer-events: all;
+  cursor: pointer;
+  transform: translateX(50%);
+}
+
+.nodeDeleteButton:hover {
+  background: #f05a32;
+}
+
+.edgeTextLabel {
+  grid-area: 1 / 1;
+  max-width: 220px;
+  padding: 3px 7px;
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 999px;
+  background: rgba(15,17,22,0.88);
+  box-shadow: var(--shadow-soft);
+  color: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.2;
+  pointer-events: none;
+  white-space: pre-wrap;
+}
+
+.edgeOverlay--selected .edgeTextLabel {
+  transform: translateY(26px);
+}
+
+/* Base pre styling (compact) */
+.rfPre {
+  display: inline-block;
+  max-width: 100%;
+
+  padding: 6px 8px;
+  border-radius: 8px;
+  margin: 2px;
+
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(0,0,0,0.28);
+  color: rgba(255,255,255,0.88);
+
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", monospace;
+  font-size: 11px;
+  line-height: 1.3;
+
+  overflow: auto;
+  white-space: pre;
+}
+
+/* ✅ Not inline: start on its own line, but still not full width */
+.rfPre--block {
+  display: block;
+  width: fit-content;   /* shrink-wrap */
+  max-width: 100%;
+}
+
+/* optional small text helper */
+.rfText {
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.75);
+  line-height: 1.25;
+}
+
+/* When on green/red nodes, keep code block readable */
+.rfNode--green .rfPre,
+.rfNode--red .rfPre {
+  background: rgba(0,0,0,0.18);
+  border-color: rgba(0,0,0,0.22);
+  color: rgba(255,255,255,0.92);
+}
+
+/* Optional selection ring */
+.react-flow__node.selected .rfNode,
+.react-flow__node.selected .rfDiamond {
+  outline: 2px solid rgba(25,195,125,0.55);
+  outline-offset: 2px;
+}
+
+.react-flow__selection,
+.react-flow__nodesselection-rect {
+  border: 1px solid rgba(21,193,163,0.72);
+  background: rgba(21,193,163,0.12);
+  box-shadow: 0 0 0 1px rgba(15,17,22,0.45);
+}
+
+.inline-container {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+
+.align-center {
+  text-align: center;
+}
+
+.mb-2 {
+  margin-bottom: 2px;
+}
+
+.mb-4 {
+  margin-bottom: 4px;
+}
+
+.mb-6 {
+  margin-bottom: 4px;
+}
+
+.floatingToolbox,
+.floatingFiles {
+  position: absolute;
+  z-index: 10;
+  display: grid;
+  max-height: calc(100vh - 36px);
+  gap: 14px;
+  padding: 14px;
+  overflow: auto;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: var(--panel-bg);
+  color: var(--panel-text);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(12px);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.floatingToolbox {
+  top: 18px;
+  left: 18px;
+  width: min(280px, calc(100vw - 36px));
+}
+
+.floatingFiles {
+  top: 18px;
+  right: 18px;
+  width: min(360px, calc(100vw - 36px));
+}
+
+.appBrand {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  z-index: 9;
+  display: inline-flex;
+  height: 42px;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 12px 6px 8px;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 8px;
+  background: rgba(15,17,22,0.72);
+  color: rgba(255,255,255,0.92);
+  box-shadow: var(--shadow-soft);
+  transform: translateX(-50%);
+  backdrop-filter: blur(10px);
+  pointer-events: auto;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.floatingToolbox input,
+.floatingToolbox textarea,
+.floatingFiles input,
+.floatingFiles textarea {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.appBrand__mark {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+}
+
+.appBrand__name {
+  font-size: 13px;
+  font-weight: 850;
+  letter-spacing: 0;
+  line-height: 1;
+}
+
+.toolboxSection {
+  display: grid;
+  gap: 10px;
+}
+
+.toolboxTitle {
+  color: var(--panel-muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.toolboxGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.toolboxButton,
+.toolboxActions button {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--field-border);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.08);
+  color: var(--panel-text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.1;
+  cursor: pointer;
+  transition: border-color 140ms ease, background-color 140ms ease, transform 140ms ease;
+}
+
+.toolboxButton:hover,
+.toolboxActions button:hover {
+  border-color: rgba(21,193,163,0.52);
+  background: rgba(21,193,163,0.16);
+  transform: translateY(-1px);
+}
+
+.toolboxButton:focus-visible,
+.toolboxActions button:focus-visible,
+.toolboxField input:focus,
+.toolboxField textarea:focus,
+.toolboxField select:focus {
+  outline: 2px solid rgba(21,193,163,0.58);
+  outline-offset: 2px;
+}
+
+.toolboxIcon {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+}
+
+.toolboxIcon--box {
+  border: 2px solid rgba(255,255,255,0.86);
+  border-radius: 4px;
+  background: rgba(75,92,107,0.88);
+}
+
+.toolboxIcon--diamond {
+  border: 2px solid rgba(255,255,255,0.86);
+  border-radius: 4px;
+  background: #4b5c6b;
+  transform: rotate(45deg) scale(0.82);
+}
+
+.toolboxIcon--group {
+  border: 2px dashed rgba(255,255,255,0.86);
+  border-radius: 4px;
+  background: rgba(47,111,143,0.36);
+}
+
+.toolboxIcon--image {
+  position: relative;
+  overflow: hidden;
+  border: 2px solid rgba(255,255,255,0.86);
+  border-radius: 4px;
+  background: rgba(255,255,255,0.12);
+}
+
+.toolboxIcon--image::before {
+  content: "";
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  left: 2px;
+  height: 7px;
+  clip-path: polygon(0 100%, 38% 35%, 58% 72%, 76% 46%, 100% 100%);
+  background: #15c1a3;
+}
+
+.toolboxIcon--image::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.9);
+}
+
+.toolboxIcon--text {
+  position: relative;
+  display: grid;
+  place-items: center;
+  border: 2px solid rgba(255,255,255,0.86);
+  border-radius: 4px;
+  background: rgba(255,255,255,0.10);
+}
+
+.toolboxIcon--text::before {
+  content: "T";
+  color: rgba(255,255,255,0.94);
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.toolboxField {
+  display: grid;
+  gap: 5px;
+  color: var(--panel-muted);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.toolboxCheck {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  color: var(--panel-text);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.toolboxCheck input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.colorSwatches {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.colorSwatch {
+  width: 100%;
+  aspect-ratio: 1;
+  border: 2px solid rgba(255,255,255,0.20);
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.20);
+  cursor: pointer;
+}
+
+.colorSwatch--selected {
+  border-color: white;
+  outline: 2px solid rgba(21,193,163,0.75);
+  outline-offset: 2px;
+}
+
+.toolboxField input,
+.toolboxField textarea,
+.toolboxField select {
+  width: 100%;
+  border: 1px solid var(--field-border);
+  border-radius: 8px;
+  background: var(--field-bg);
+  color: var(--panel-text);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.toolboxField input[type="color"] {
+  height: 36px;
+  padding: 4px;
+}
+
+.toolboxField input,
+.toolboxField select {
+  min-height: 34px;
+  padding: 0 9px;
+}
+
+.toolboxField textarea {
+  min-height: 70px;
+  padding: 8px 9px;
+  resize: vertical;
+}
+
+.toolboxField select option {
+  background: #171b24;
+  color: white;
+}
+
+.toolboxActions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.toolboxActions--inline {
+  grid-template-columns: 0.8fr 1.2fr;
+}
+
+.toolboxActions--single {
+  grid-template-columns: 1fr;
+}
+
+.fileActions {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.toolboxActions button.toolboxDanger {
+  border-color: rgba(221,74,33,0.42);
+  background: rgba(221,74,33,0.16);
+  color: #ffd7cf;
+}
+
+.toolboxActions button.toolboxDanger:hover {
+  border-color: rgba(240,90,50,0.72);
+  background: rgba(221,74,33,0.28);
+}
+
+.fileStatus {
+  min-height: 16px;
+  color: var(--panel-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.fileInput {
+  display: none;
+}
+
+.svgExportSurface {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 2147483647;
+  overflow: hidden;
+  background: var(--canvas-bg);
+  color: #f5f7fb;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+  pointer-events: none;
+}
+
+.svgExportNode {
+  position: absolute;
+}
+
+.svgExportEdges,
+.svgExportEdgeLabels {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.svgExportEdges {
+  color: var(--edge-stroke);
+}
+
+.svgExportSurface .react-flow__handle,
+.svgExportSurface .react-flow__resize-control {
+  display: none;
+}
+
+.svgExportSurface .react-flow__edge-interaction,
+.svgExportSurface .edgeDeleteButton,
+.svgExportSurface .nodeDeleteButton,
+.svgExportSurface .react-flow__node-toolbar {
+  display: none;
+}
+
+.svgExportSurface * {
+  animation: none !important;
+  transition: none !important;
+}
+
+@media (max-width: 620px) {
+  .appBrand {
+    top: auto;
+    right: 12px;
+    bottom: 12px;
+    left: auto;
+    height: 38px;
+    transform: none;
+  }
+
+  .appBrand__mark {
+    width: 24px;
+    height: 24px;
+  }
+
+  .appBrand__name {
+    font-size: 12px;
+  }
+
+  .floatingToolbox {
+    right: 12px;
+    left: 12px;
+    top: 12px;
+    width: auto;
+    max-height: 48vh;
+  }
+
+  .floatingFiles {
+    right: 12px;
+    left: 12px;
+    top: calc(48vh + 24px);
+    width: auto;
+    max-height: 30vh;
+  }
+
+  .toolboxGrid,
+  .toolboxActions {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
