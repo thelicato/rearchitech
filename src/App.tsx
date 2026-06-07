@@ -59,6 +59,11 @@ type FlowFile = {
   edges?: unknown;
 };
 
+type FlowDiagram = {
+  edges: Edge[];
+  nodes: AppNode[];
+};
+
 type FlowSnapshot = {
   edges: Edge[];
   nodes: AppNode[];
@@ -104,6 +109,8 @@ const MIN_EXPORT_HEIGHT = 360;
 const DRAWIO_BACKGROUND_COLOR = "#0f1116";
 const DRAWIO_ROOT_ID = "1";
 const HISTORY_LIMIT = 80;
+const LOCAL_STORAGE_AUTO_SAVE_KEY = "rearchitech.autoSave";
+const LOCAL_STORAGE_DIAGRAM_KEY = "rearchitech.diagram";
 const PASTE_OFFSET = 36;
 const SELECTION_KEY_CODE = "Shift";
 
@@ -958,6 +965,80 @@ const sanitizeEdges = (edges: unknown, nodes: AppNode[]): Edge[] => {
   });
 };
 
+const getLocalStorage = () => {
+  if (typeof window === "undefined") return null;
+
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+};
+
+const readAutoSaveSetting = () =>
+  getLocalStorage()?.getItem(LOCAL_STORAGE_AUTO_SAVE_KEY) === "true";
+
+const writeAutoSaveSetting = (enabled: boolean) => {
+  const storage = getLocalStorage();
+  if (!storage) return false;
+
+  try {
+    storage.setItem(LOCAL_STORAGE_AUTO_SAVE_KEY, enabled ? "true" : "false");
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const readLocalDiagram = (): FlowDiagram | null => {
+  const storage = getLocalStorage();
+  if (!storage) return null;
+
+  try {
+    const rawDiagram = storage.getItem(LOCAL_STORAGE_DIAGRAM_KEY);
+    if (!rawDiagram) return null;
+
+    const payload = JSON.parse(rawDiagram) as FlowFile;
+    const nodes = sanitizeNodes(payload.nodes);
+
+    return {
+      edges: sanitizeEdges(payload.edges, nodes),
+      nodes,
+    };
+  } catch {
+    return null;
+  }
+};
+
+const writeLocalDiagram = (nodes: AppNode[], edges: Edge[]) => {
+  const storage = getLocalStorage();
+  if (!storage) return false;
+
+  try {
+    storage.setItem(
+      LOCAL_STORAGE_DIAGRAM_KEY,
+      JSON.stringify({
+        version: 1,
+        savedAt: new Date().toISOString(),
+        nodes,
+        edges,
+      }),
+    );
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const getInitialLocalState = () => {
+  const autoSaveEnabled = readAutoSaveSetting();
+
+  return {
+    autoSaveEnabled,
+    diagram: autoSaveEnabled ? readLocalDiagram() : null,
+  };
+};
+
 type DrawioGeometry = {
   height: number;
   width: number;
@@ -1639,16 +1720,29 @@ export default function App() {
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const idCounterRef = useRef(1);
   const placementOffsetRef = useRef(0);
+  const initialLocalStateRef = useRef<ReturnType<typeof getInitialLocalState> | null>(null);
 
-  const [nodes, setNodes] = useState<AppNode[]>([]);
-  const [edges, setEdges] = useState<Edge[]>([]);
+  if (!initialLocalStateRef.current) {
+    initialLocalStateRef.current = getInitialLocalState();
+  }
+
+  const [nodes, setNodes] = useState<AppNode[]>(
+    () => initialLocalStateRef.current?.diagram?.nodes ?? [],
+  );
+  const [edges, setEdges] = useState<Edge[]>(
+    () => initialLocalStateRef.current?.diagram?.edges ?? [],
+  );
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [fileStatus, setFileStatus] = useState("");
+  const [autoSaveEnabled, setAutoSaveEnabled] = useState(
+    () => initialLocalStateRef.current?.autoSaveEnabled ?? false,
+  );
   const [showConnectionPoints, setShowConnectionPoints] = useState(true);
 
   const historyRef = useRef<FlowSnapshot[]>([]);
   const clipboardRef = useRef<FlowClipboard | null>(null);
+  const hasSkippedInitialAutoSaveRef = useRef(false);
   const isDraggingNodesRef = useRef(false);
   const nodesRef = useRef(nodes);
   const edgesRef = useRef(edges);
@@ -1969,6 +2063,76 @@ export default function App() {
       window.removeEventListener("keydown", handleShortcutKeyDown);
     };
   }, [handleShortcutKeyDown]);
+
+  useEffect(() => {
+    if (!hasSkippedInitialAutoSaveRef.current) {
+      hasSkippedInitialAutoSaveRef.current = true;
+      return;
+    }
+
+    if (!autoSaveEnabled) return;
+
+    if (!writeLocalDiagram(nodes, edges)) {
+      setFileStatus("Auto-save failed");
+    }
+  }, [autoSaveEnabled, edges, nodes]);
+
+  const saveLocalDiagram = useCallback(() => {
+    if (writeLocalDiagram(nodesRef.current, edgesRef.current)) {
+      setFileStatus("Saved locally");
+      return;
+    }
+
+    setFileStatus("Local save failed");
+  }, []);
+
+  const loadLocalDiagram = useCallback(() => {
+    const diagram = readLocalDiagram();
+    if (!diagram) {
+      setFileStatus("No local save");
+      return;
+    }
+
+    pushHistory();
+    nodesRef.current = diagram.nodes;
+    edgesRef.current = diagram.edges;
+    selectedNodeIdRef.current = null;
+    selectedEdgeIdRef.current = null;
+
+    setNodes(diagram.nodes);
+    setEdges(diagram.edges);
+    setSelectedNodeId(null);
+    setSelectedEdgeId(null);
+    setFileStatus("Loaded local save");
+
+    window.requestAnimationFrame(() => {
+      if (diagram.nodes.length > 0) {
+        fitView({ padding: 0.2 });
+      }
+    });
+  }, [fitView, pushHistory]);
+
+  const updateAutoSaveEnabled = useCallback((enabled: boolean) => {
+    if (!writeAutoSaveSetting(enabled)) {
+      setAutoSaveEnabled(false);
+      setFileStatus("Local storage unavailable");
+      return;
+    }
+
+    setAutoSaveEnabled(enabled);
+
+    if (!enabled) {
+      setFileStatus("Auto-save off");
+      return;
+    }
+
+    if (writeLocalDiagram(nodesRef.current, edgesRef.current)) {
+      setFileStatus("Auto-save on");
+      return;
+    }
+
+    setFileStatus("Auto-save failed");
+  }, []);
 
   const addNodeFromToolbox = useCallback(
     (item: ToolboxItem) => {
@@ -2721,6 +2885,12 @@ export default function App() {
           <div className="toolboxSection">
             <div className="toolboxTitle">Files</div>
             <div className="toolboxActions fileActions">
+              <button type="button" onClick={saveLocalDiagram}>
+                Save local
+              </button>
+              <button type="button" onClick={loadLocalDiagram}>
+                Load local
+              </button>
               <button type="button" onClick={exportFlowFile}>
                 Export
               </button>
@@ -2737,6 +2907,14 @@ export default function App() {
                 Clear
               </button>
             </div>
+            <label className="toolboxCheck">
+              <input
+                type="checkbox"
+                checked={autoSaveEnabled}
+                onChange={(event) => updateAutoSaveEnabled(event.target.checked)}
+              />
+              <span>Auto-save</span>
+            </label>
             {fileStatus ? <div className="fileStatus">{fileStatus}</div> : null}
             <input
               ref={importInputRef}
