@@ -1,4 +1,4 @@
-import { type ChangeEvent, useCallback, useMemo, useRef, useState } from "react";
+import { type ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
   Controls,
@@ -59,6 +59,19 @@ type FlowFile = {
   edges?: unknown;
 };
 
+type FlowSnapshot = {
+  edges: Edge[];
+  nodes: AppNode[];
+  selectedEdgeId: string | null;
+  selectedNodeId: string | null;
+};
+
+type FlowClipboard = {
+  edges: Edge[];
+  nodes: AppNode[];
+  pasteCount: number;
+};
+
 const nodeKinds = new Set<ToolboxNodeType>(["box", "diamond", "group", "text"]);
 const edgeKinds = new Set(["padded", "horizontal", "routed"]);
 const boxVariants = new Set<BoxVariant>(["default", "dark", "green", "red"]);
@@ -90,6 +103,8 @@ const MIN_EXPORT_WIDTH = 640;
 const MIN_EXPORT_HEIGHT = 360;
 const DRAWIO_BACKGROUND_COLOR = "#0f1116";
 const DRAWIO_ROOT_ID = "1";
+const HISTORY_LIMIT = 80;
+const PASTE_OFFSET = 36;
 const SELECTION_KEY_CODE = "Shift";
 
 const toolboxItems: ToolboxItem[] = [
@@ -143,6 +158,45 @@ const toText = (value: unknown, fallback = "") =>
 
 const toBoolean = (value: unknown, fallback: boolean) =>
   typeof value === "boolean" ? value : fallback;
+
+const cloneFlowValue = <T,>(value: T): T => {
+  try {
+    return structuredClone(value);
+  } catch {
+    return JSON.parse(JSON.stringify(value)) as T;
+  }
+};
+
+const getSnapshotKey = (snapshot: FlowSnapshot) => {
+  try {
+    return JSON.stringify(snapshot);
+  } catch {
+    return "";
+  }
+};
+
+const isEditableShortcutTarget = (target: EventTarget | null) => {
+  if (!(target instanceof HTMLElement)) return false;
+
+  return Boolean(
+    target.isContentEditable ||
+      target.closest("input, textarea, select, [contenteditable='true']"),
+  );
+};
+
+const hasUndoableNodeChanges = (changes: NodeChange[]) =>
+  changes.some(
+    (change) =>
+      change.type === "add" ||
+      change.type === "position" ||
+      change.type === "remove" ||
+      change.type === "replace",
+  );
+
+const hasUndoableEdgeChanges = (changes: EdgeChange[]) =>
+  changes.some(
+    (change) => change.type === "add" || change.type === "remove" || change.type === "replace",
+  );
 
 const isHexColor = (value: string) => /^#[0-9a-fA-F]{6}$/.test(value);
 
@@ -1593,6 +1647,19 @@ export default function App() {
   const [fileStatus, setFileStatus] = useState("");
   const [showConnectionPoints, setShowConnectionPoints] = useState(true);
 
+  const historyRef = useRef<FlowSnapshot[]>([]);
+  const clipboardRef = useRef<FlowClipboard | null>(null);
+  const isDraggingNodesRef = useRef(false);
+  const nodesRef = useRef(nodes);
+  const edgesRef = useRef(edges);
+  const selectedNodeIdRef = useRef(selectedNodeId);
+  const selectedEdgeIdRef = useRef(selectedEdgeId);
+
+  nodesRef.current = nodes;
+  edgesRef.current = edges;
+  selectedNodeIdRef.current = selectedNodeId;
+  selectedEdgeIdRef.current = selectedEdgeId;
+
   const nodeTypes = useMemo<NodeTypes>(
     () => ({
       box: BoxNode,
@@ -1677,6 +1744,232 @@ export default function App() {
     }));
   }, [nodes]);
 
+  const getCurrentSnapshot = useCallback(
+    (): FlowSnapshot => ({
+      edges: cloneFlowValue(edgesRef.current),
+      nodes: cloneFlowValue(nodesRef.current),
+      selectedEdgeId: selectedEdgeIdRef.current,
+      selectedNodeId: selectedNodeIdRef.current,
+    }),
+    [],
+  );
+
+  const pushHistory = useCallback(() => {
+    const snapshot = getCurrentSnapshot();
+    const snapshotKey = getSnapshotKey(snapshot);
+    const lastSnapshot = historyRef.current[historyRef.current.length - 1];
+
+    if (snapshotKey && lastSnapshot && snapshotKey === getSnapshotKey(lastSnapshot)) {
+      return;
+    }
+
+    historyRef.current = [
+      ...historyRef.current.slice(Math.max(0, historyRef.current.length - HISTORY_LIMIT + 1)),
+      snapshot,
+    ];
+  }, [getCurrentSnapshot]);
+
+  const copySelection = useCallback(() => {
+    const selectedNodeIds = new Set(
+      nodesRef.current.filter((node) => node.selected).map((node) => node.id),
+    );
+    const selectedEdgeIds = new Set(
+      edgesRef.current
+        .filter((edge) => edge.selected || edge.id === selectedEdgeIdRef.current)
+        .map((edge) => edge.id),
+    );
+
+    if (selectedNodeIds.size === 0 && selectedEdgeIds.size === 0) return false;
+
+    const copiedNodes = nodesRef.current
+      .filter((node) => selectedNodeIds.has(node.id))
+      .map((node) => ({ ...cloneFlowValue(node), selected: false }) as AppNode);
+    const copiedEdgesById = new Map<string, Edge>();
+
+    edgesRef.current.forEach((edge) => {
+      if (
+        selectedEdgeIds.has(edge.id) ||
+        (selectedNodeIds.has(edge.source) && selectedNodeIds.has(edge.target))
+      ) {
+        copiedEdgesById.set(edge.id, { ...cloneFlowValue(edge), selected: false });
+      }
+    });
+
+    const copiedEdges = Array.from(copiedEdgesById.values());
+    if (copiedNodes.length === 0 && copiedEdges.length === 0) return false;
+
+    clipboardRef.current = {
+      edges: copiedEdges,
+      nodes: copiedNodes,
+      pasteCount: 0,
+    };
+
+    const copiedParts = [
+      copiedNodes.length
+        ? `${copiedNodes.length} node${copiedNodes.length === 1 ? "" : "s"}`
+        : "",
+      copiedEdges.length
+        ? `${copiedEdges.length} edge${copiedEdges.length === 1 ? "" : "s"}`
+        : "",
+    ].filter(Boolean);
+
+    setFileStatus(`Copied ${copiedParts.join(" and ")}`);
+    return true;
+  }, []);
+
+  const pasteClipboard = useCallback(() => {
+    const clipboard = clipboardRef.current;
+    if (!clipboard || (clipboard.nodes.length === 0 && clipboard.edges.length === 0)) {
+      return false;
+    }
+
+    const nextPasteCount = clipboard.pasteCount + 1;
+    const offset = PASTE_OFFSET * nextPasteCount;
+    const currentNodes = nodesRef.current;
+    const currentEdges = edgesRef.current;
+    const currentNodeIds = new Set(currentNodes.map((node) => node.id));
+    const pastedNodeIds = new Map<string, string>();
+    const pastedNodes = clipboard.nodes.map((node) => {
+      const nextId = createId("node");
+      pastedNodeIds.set(node.id, nextId);
+
+      return {
+        ...cloneFlowValue(node),
+        id: nextId,
+        position: {
+          x: node.position.x + offset,
+          y: node.position.y + offset,
+        },
+        selected: true,
+      } as AppNode;
+    });
+    const availableNodeIds = new Set([
+      ...currentNodeIds,
+      ...pastedNodes.map((node) => node.id),
+    ]);
+    const pastedEdges = clipboard.edges.flatMap((edge) => {
+      const sourceWasPasted = pastedNodeIds.has(edge.source);
+      const targetWasPasted = pastedNodeIds.has(edge.target);
+
+      if (clipboard.nodes.length > 0 && (!sourceWasPasted || !targetWasPasted)) {
+        return [];
+      }
+
+      const source = pastedNodeIds.get(edge.source) ?? edge.source;
+      const target = pastedNodeIds.get(edge.target) ?? edge.target;
+      if (!availableNodeIds.has(source) || !availableNodeIds.has(target)) return [];
+
+      return [
+        {
+          ...cloneFlowValue(edge),
+          id: createId("edge"),
+          source,
+          target,
+          selected: true,
+        },
+      ];
+    });
+
+    if (pastedNodes.length === 0 && pastedEdges.length === 0) return false;
+
+    pushHistory();
+    clipboardRef.current = { ...clipboard, pasteCount: nextPasteCount };
+
+    const nextNodes = [
+      ...currentNodes.map((node) => ({ ...node, selected: false }) as AppNode),
+      ...pastedNodes,
+    ];
+    const nextEdges = [
+      ...currentEdges.map((edge) => ({ ...edge, selected: false })),
+      ...pastedEdges,
+    ];
+
+    nodesRef.current = nextNodes;
+    edgesRef.current = nextEdges;
+    selectedNodeIdRef.current = pastedNodes.length === 1 ? pastedNodes[0].id : null;
+    selectedEdgeIdRef.current =
+      pastedNodes.length === 0 && pastedEdges.length === 1 ? pastedEdges[0].id : null;
+
+    setNodes(nextNodes);
+    setEdges(nextEdges);
+    setSelectedNodeId(selectedNodeIdRef.current);
+    setSelectedEdgeId(selectedEdgeIdRef.current);
+
+    const pastedParts = [
+      pastedNodes.length
+        ? `${pastedNodes.length} node${pastedNodes.length === 1 ? "" : "s"}`
+        : "",
+      pastedEdges.length
+        ? `${pastedEdges.length} edge${pastedEdges.length === 1 ? "" : "s"}`
+        : "",
+    ].filter(Boolean);
+
+    setFileStatus(`Pasted ${pastedParts.join(" and ")}`);
+    return true;
+  }, [createId, pushHistory]);
+
+  const undoLastChange = useCallback(() => {
+    const previousSnapshot = historyRef.current.pop();
+    if (!previousSnapshot) {
+      setFileStatus("Nothing to undo");
+      return false;
+    }
+
+    const nextNodes = cloneFlowValue(previousSnapshot.nodes);
+    const nextEdges = cloneFlowValue(previousSnapshot.edges);
+
+    nodesRef.current = nextNodes;
+    edgesRef.current = nextEdges;
+    selectedNodeIdRef.current = previousSnapshot.selectedNodeId;
+    selectedEdgeIdRef.current = previousSnapshot.selectedEdgeId;
+
+    setNodes(nextNodes);
+    setEdges(nextEdges);
+    setSelectedNodeId(previousSnapshot.selectedNodeId);
+    setSelectedEdgeId(previousSnapshot.selectedEdgeId);
+    setFileStatus("Undone");
+    return true;
+  }, []);
+
+  const handleShortcutKeyDown = useCallback(
+    (event: KeyboardEvent) => {
+      if (
+        event.defaultPrevented ||
+        isEditableShortcutTarget(event.target) ||
+        event.altKey ||
+        (!event.ctrlKey && !event.metaKey)
+      ) {
+        return;
+      }
+
+      const key = event.key.toLowerCase();
+
+      if (key === "c" && !event.shiftKey) {
+        if (copySelection()) event.preventDefault();
+        return;
+      }
+
+      if (key === "v" && !event.shiftKey) {
+        if (pasteClipboard()) event.preventDefault();
+        return;
+      }
+
+      if (key === "z" && !event.shiftKey) {
+        event.preventDefault();
+        undoLastChange();
+      }
+    },
+    [copySelection, pasteClipboard, undoLastChange],
+  );
+
+  useEffect(() => {
+    window.addEventListener("keydown", handleShortcutKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleShortcutKeyDown);
+    };
+  }, [handleShortcutKeyDown]);
+
   const addNodeFromToolbox = useCallback(
     (item: ToolboxItem) => {
       const nextNode = {
@@ -1690,6 +1983,7 @@ export default function App() {
         ...(typeof item.zIndex === "number" ? { zIndex: item.zIndex } : null),
       } as AppNode;
 
+      pushHistory();
       setNodes((nodesSnapshot) => [
         ...nodesSnapshot.map((node) => ({ ...node, selected: false }) as AppNode),
         nextNode,
@@ -1699,30 +1993,55 @@ export default function App() {
       setSelectedEdgeId(null);
       setFileStatus("");
     },
-    [createId, getNextNodePosition],
+    [createId, getNextNodePosition, pushHistory],
   );
 
-  const onNodesChange = useCallback((changes: NodeChange[]) => {
-    setNodes((nodesSnapshot) => applyNodeChanges(changes, nodesSnapshot) as AppNode[]);
-  }, []);
+  const onNodesChange = useCallback(
+    (changes: NodeChange[]) => {
+      if (hasUndoableNodeChanges(changes)) {
+        const hasPositionChange = changes.some((change) => change.type === "position");
+        const isDragging = changes.some(
+          (change) => change.type === "position" && change.dragging,
+        );
 
-  const onEdgesChange = useCallback((changes: EdgeChange[]) => {
-    setEdges((edgesSnapshot) => {
-      const nextEdges = applyEdgeChanges(changes, edgesSnapshot);
+        if (hasPositionChange) {
+          if (!isDraggingNodesRef.current) pushHistory();
+          isDraggingNodesRef.current = isDragging;
+        } else {
+          pushHistory();
+        }
+      }
 
-      setSelectedEdgeId((currentId) => {
-        const selectedEdge = nextEdges.find((edge) => edge.selected);
-        if (selectedEdge) return selectedEdge.id;
-        if (currentId && nextEdges.some((edge) => edge.id === currentId)) return currentId;
-        return null;
+      setNodes((nodesSnapshot) => applyNodeChanges(changes, nodesSnapshot) as AppNode[]);
+    },
+    [pushHistory],
+  );
+
+  const onEdgesChange = useCallback(
+    (changes: EdgeChange[]) => {
+      if (hasUndoableEdgeChanges(changes)) {
+        pushHistory();
+      }
+
+      setEdges((edgesSnapshot) => {
+        const nextEdges = applyEdgeChanges(changes, edgesSnapshot);
+
+        setSelectedEdgeId((currentId) => {
+          const selectedEdge = nextEdges.find((edge) => edge.selected);
+          if (selectedEdge) return selectedEdge.id;
+          if (currentId && nextEdges.some((edge) => edge.id === currentId)) return currentId;
+          return null;
+        });
+
+        return nextEdges;
       });
-
-      return nextEdges;
-    });
-  }, []);
+    },
+    [pushHistory],
+  );
 
   const onConnect = useCallback(
     (connection: Connection) => {
+      pushHistory();
       setEdges((edgesSnapshot) =>
         addEdge(
           {
@@ -1734,7 +2053,7 @@ export default function App() {
         ),
       );
     },
-    [createId],
+    [createId, pushHistory],
   );
 
   const onSelectionChange = useCallback(
@@ -1755,6 +2074,7 @@ export default function App() {
     (field: string, value: boolean | string) => {
       if (!selectedNodeId) return;
 
+      pushHistory();
       setNodes((nodesSnapshot) =>
         nodesSnapshot.map((node) => {
           if (node.id !== selectedNodeId) return node;
@@ -1769,24 +2089,26 @@ export default function App() {
         }),
       );
     },
-    [selectedNodeId],
+    [pushHistory, selectedNodeId],
   );
 
   const updateSelectedEdge = useCallback(
     (updates: Partial<Edge>) => {
       if (!selectedEdgeId) return;
 
+      pushHistory();
       setEdges((edgesSnapshot) =>
         edgesSnapshot.map((edge) => (edge.id === selectedEdgeId ? { ...edge, ...updates } : edge)),
       );
     },
-    [selectedEdgeId],
+    [pushHistory, selectedEdgeId],
   );
 
   const updateSelectedEdgeData = useCallback(
     (field: string, value: boolean | number | string) => {
       if (!selectedEdgeId) return;
 
+      pushHistory();
       setEdges((edgesSnapshot) =>
         edgesSnapshot.map((edge) => {
           if (edge.id !== selectedEdgeId) return edge;
@@ -1801,13 +2123,14 @@ export default function App() {
         }),
       );
     },
-    [selectedEdgeId],
+    [pushHistory, selectedEdgeId],
   );
 
   const updateSelectedEdgeColor = useCallback(
     (color: string) => {
       if (!selectedEdgeId) return;
 
+      pushHistory();
       setEdges((edgesSnapshot) =>
         edgesSnapshot.map((edge) => {
           if (edge.id !== selectedEdgeId) return edge;
@@ -1828,12 +2151,13 @@ export default function App() {
         }),
       );
     },
-    [selectedEdgeId],
+    [pushHistory, selectedEdgeId],
   );
 
   const deleteSelectedNode = useCallback(() => {
     if (!selectedNodeId) return;
 
+    pushHistory();
     setNodes((nodesSnapshot) => nodesSnapshot.filter((node) => node.id !== selectedNodeId));
     setEdges((edgesSnapshot) =>
       edgesSnapshot.filter((edge) => edge.source !== selectedNodeId && edge.target !== selectedNodeId),
@@ -1841,7 +2165,7 @@ export default function App() {
     setSelectedNodeId(null);
     setSelectedEdgeId(null);
     setFileStatus("Node deleted");
-  }, [selectedNodeId]);
+  }, [pushHistory, selectedNodeId]);
 
   const importSelectedNodeImage = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
@@ -1909,6 +2233,7 @@ export default function App() {
           throw new Error("No supported draw.io nodes found");
         }
 
+        pushHistory();
         setNodes(nextNodes);
         setEdges(nextEdges);
         setSelectedNodeId(null);
@@ -1929,7 +2254,7 @@ export default function App() {
         event.target.value = "";
       }
     },
-    [fitView],
+    [fitView, pushHistory],
   );
 
   const exportCanvasSvg = useCallback(() => {
@@ -1966,12 +2291,15 @@ export default function App() {
   }, [downloadBlob, edges, getCurrentNodeLayouts]);
 
   const clearCanvas = useCallback(() => {
+    if (nodesRef.current.length === 0 && edgesRef.current.length === 0) return;
+
+    pushHistory();
     setNodes([]);
     setEdges([]);
     setSelectedNodeId(null);
     setSelectedEdgeId(null);
     setFileStatus("");
-  }, []);
+  }, [pushHistory]);
 
   return (
     <div className={showConnectionPoints ? "appShell" : "appShell appShell--hideConnectionPoints"}>
