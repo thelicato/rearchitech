@@ -381,6 +381,10 @@ body {
   pointer-events: none;
 }
 
+.nodeDeleteToolbar--text .nodeDeleteButton {
+  transform: translateX(120%);
+}
+
 .nodeDeleteButton {
   display: grid;
   width: 24px;

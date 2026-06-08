@@ -29,16 +29,19 @@ export function BoxNode({ data }: NodeProps<BoxNodeType>) {
       : variant === "red"
       ? "rfNode rfNode--red"
       : "rfNode";
-  const customStyle: React.CSSProperties = useCustomColors
-    ? {
-        backgroundColor: getColorWithOpacity(
-          data.backgroundColor,
-          data.backgroundOpacity ?? 100,
-        ),
-        borderColor: getColorWithOpacity(data.borderColor, data.borderOpacity ?? 100),
-        color: data.textColor || undefined,
-      }
-    : {};
+  const customStyle: React.CSSProperties = {
+    ...(useCustomColors
+      ? {
+          backgroundColor: getColorWithOpacity(
+            data.backgroundColor,
+            data.backgroundOpacity ?? 100,
+          ),
+          borderColor: getColorWithOpacity(data.borderColor, data.borderOpacity ?? 100),
+          color: data.textColor || undefined,
+        }
+      : {}),
+    boxShadow: data.shadow === false ? "none" : undefined,
+  };
   const titleClassName =
     data.titleAlign === "center" ? "rfNode__title rfNode__title--center" : "rfNode__title";
   const imageClassName =

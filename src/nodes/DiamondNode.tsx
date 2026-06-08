@@ -17,12 +17,15 @@ const getColorWithOpacity = (color?: string, opacity = 100) => {
 
 export function DiamondNode({ data }: NodeProps<DiamondNodeType>) {
   const useCustomColors = data.useCustomColors === true;
-  const customStyle: React.CSSProperties = useCustomColors
-    ? {
-        backgroundColor: getColorWithOpacity(data.backgroundColor, data.backgroundOpacity ?? 100),
-        borderColor: getColorWithOpacity(data.borderColor, data.borderOpacity ?? 100),
-      }
-    : {};
+  const customStyle: React.CSSProperties = {
+    ...(useCustomColors
+      ? {
+          backgroundColor: getColorWithOpacity(data.backgroundColor, data.backgroundOpacity ?? 100),
+          borderColor: getColorWithOpacity(data.borderColor, data.borderOpacity ?? 100),
+        }
+      : {}),
+    boxShadow: data.shadow === false ? "none" : undefined,
+  };
   const labelStyle: React.CSSProperties = useCustomColors
     ? { color: data.textColor || undefined }
     : {};

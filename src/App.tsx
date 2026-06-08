@@ -1553,7 +1553,7 @@ const getDrawioNodeCell = (
       "html=1",
       "arcSize=8",
       "spacing=10",
-      "shadow=1",
+      `shadow=${node.data.shadow === false ? 0 : 1}`,
       `fillColor=${colors.fill}`,
       `strokeColor=${colors.stroke}`,
       `fontColor=${colors.font}`,
@@ -1567,7 +1567,7 @@ const getDrawioNodeCell = (
       "whiteSpace=wrap",
       "html=1",
       "rounded=1",
-      "shadow=1",
+      `shadow=${node.data.shadow === false ? 0 : 1}`,
       "fillColor=#4b5c6b",
       "strokeColor=#687987",
       "fontColor=#f5f7fb",
@@ -1586,6 +1586,7 @@ const getDrawioNodeCell = (
       "container=1",
       "collapsible=0",
       "connectable=0",
+      `shadow=${node.data.shadow === false ? 0 : 1}`,
       "fillOpacity=20",
       "strokeWidth=2",
       `fillColor=${color}`,
@@ -2558,7 +2559,7 @@ export default function App() {
             {selectedNode ? (
               <NodeToolbar
                 align="end"
-                className="nodeDeleteToolbar"
+                className={`nodeDeleteToolbar ${selectedNode.type === "text" ? "nodeDeleteToolbar--text" : ""}`}
                 isVisible
                 nodeId={selectedNode.id}
                 offset={-12}
@@ -2626,6 +2627,14 @@ export default function App() {
                       }
                     />
                     <span>Custom colors</span>
+                  </label>
+                  <label className="toolboxCheck">
+                    <input
+                      type="checkbox"
+                      checked={selectedNode.data.shadow !== false}
+                      onChange={(event) => updateSelectedNodeData("shadow", event.target.checked)}
+                    />
+                    <span>Shadow</span>
                   </label>
                   {selectedNode.data.useCustomColors === true ? (
                     <>
@@ -2723,6 +2732,14 @@ export default function App() {
                       onChange={(event) => updateSelectedNodeData("color", event.target.value)}
                     />
                   </label>
+                  <label className="toolboxCheck">
+                    <input
+                      type="checkbox"
+                      checked={selectedNode.data.shadow !== false}
+                      onChange={(event) => updateSelectedNodeData("shadow", event.target.checked)}
+                    />
+                    <span>Shadow</span>
+                  </label>
                   <label className="toolboxField">
                     <span>Title position</span>
                     <select
@@ -2803,6 +2820,14 @@ export default function App() {
                       value={toText(selectedNode.data.subtitle)}
                       onChange={(event) => updateSelectedNodeData("subtitle", event.target.value)}
                     />
+                  </label>
+                  <label className="toolboxCheck">
+                    <input
+                      type="checkbox"
+                      checked={selectedNode.data.shadow !== false}
+                      onChange={(event) => updateSelectedNodeData("shadow", event.target.checked)}
+                    />
+                    <span>Shadow</span>
                   </label>
                   <label className="toolboxCheck">
                     <input

@@ -76,6 +76,7 @@ export function GroupNode({ data, selected }: NodeProps<GroupNodeType>) {
       style={{
         backgroundColor,
         borderColor,
+        boxShadow: data.shadow === false ? "none" : undefined,
       }}
     >
       {data.title ? (

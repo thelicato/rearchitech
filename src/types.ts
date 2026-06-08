@@ -20,11 +20,13 @@ export type BoxNodeData = {
   content?: ReactNode;
 
   variant?: "default" | "dark" | "green" | "red";
+  shadow?: boolean;
 };
 
 export type DiamondNodeData = {
   label: ReactNode;
   useCustomColors?: boolean;
+  shadow?: boolean;
   backgroundColor?: string;
   backgroundOpacity?: number;
   borderColor?: string;
@@ -36,9 +38,7 @@ export type GroupNodeData = {
   color?: string;
   backgroundOpacity?: number;
   borderOpacity?: number;
-  color?: string;
-  backgroundOpacity?: number;
-  borderOpacity?: number;
+  shadow?: boolean;
   title?: string;
   titlePlacement?: "inside" | "outside";
   titlePosition?:
