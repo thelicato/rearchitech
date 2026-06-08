@@ -11,7 +11,9 @@ export type BoxNodeData = {
   imageHasBackground?: boolean;
   useCustomColors?: boolean;
   backgroundColor?: string;
+  backgroundOpacity?: number;
   borderColor?: string;
+  borderOpacity?: number;
   textColor?: string;
 
   /** Arbitrary JSX content rendered inside the node */
@@ -22,10 +24,21 @@ export type BoxNodeData = {
 
 export type DiamondNodeData = {
   label: ReactNode;
+  useCustomColors?: boolean;
+  backgroundColor?: string;
+  backgroundOpacity?: number;
+  borderColor?: string;
+  borderOpacity?: number;
+  textColor?: string;
 };
 
 export type GroupNodeData = {
   color?: string;
+  backgroundOpacity?: number;
+  borderOpacity?: number;
+  color?: string;
+  backgroundOpacity?: number;
+  borderOpacity?: number;
   title?: string;
   titlePlacement?: "inside" | "outside";
   titlePosition?:

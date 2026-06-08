@@ -11,6 +11,7 @@ const legacyTitlePositions = {
 } as const;
 
 function normalizeHex(value?: string) {
+  if (value === "transparent") return value;
   if (!value || !/^#[0-9a-fA-F]{6}$/.test(value)) return DEFAULT_GROUP_COLOR;
   return value;
 }
@@ -47,12 +48,23 @@ function getRelativeLuminance(hex: string) {
   return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
 }
 
+function toRgba(hex: string, alpha: number) {
+  const { r, g, b } = hexToRgb(hex);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 export function GroupNode({ data, selected }: NodeProps<GroupNodeType>) {
   const color = normalizeHex(data.color);
-  const borderColor =
-    getRelativeLuminance(color) < 0.42
-      ? mixColor(color, "#ffffff", 0.45)
-      : mixColor(color, "#000000", 0.35);
+  const isTransparent = color === "transparent";
+  const baseBorderColor = isTransparent
+    ? "transparent"
+    : getRelativeLuminance(color) < 0.42
+    ? mixColor(color, "#ffffff", 0.45)
+    : mixColor(color, "#000000", 0.35);
+  const backgroundOpacity = ((data.backgroundOpacity ?? 100) / 100) * 0.2;
+  const borderOpacity = Math.max(0, Math.min(100, data.borderOpacity ?? 100)) / 100;
+  const backgroundColor = isTransparent ? "transparent" : toRgba(color, backgroundOpacity);
+  const borderColor = isTransparent ? "transparent" : toRgba(baseBorderColor, borderOpacity);
   const titlePosition =
     data.titlePosition ?? legacyTitlePositions[data.titleSide ?? "top"] ?? "top-center";
   const titlePlacement = data.titlePlacement ?? "inside";
@@ -62,7 +74,7 @@ export function GroupNode({ data, selected }: NodeProps<GroupNodeType>) {
     <div
       className="rfGroupNode"
       style={{
-        backgroundColor: `${color}33`,
+        backgroundColor,
         borderColor,
       }}
     >
@@ -70,9 +82,9 @@ export function GroupNode({ data, selected }: NodeProps<GroupNodeType>) {
         <div
           className={titleClassName}
           style={{
-            backgroundColor: `${color}ee`,
+            backgroundColor: isTransparent ? "transparent" : `${color}ee`,
             borderColor,
-            color: getRelativeLuminance(color) < 0.42 ? "#ffffff" : "#111827",
+            color: isTransparent ? "#111827" : getRelativeLuminance(color) < 0.42 ? "#ffffff" : "#111827",
           }}
         >
           {data.title}

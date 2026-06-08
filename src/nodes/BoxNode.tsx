@@ -2,6 +2,19 @@ import React from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import type { BoxNode as BoxNodeType } from "../types";
 
+const getColorWithOpacity = (color?: string, opacity = 100) => {
+  if (!color) return undefined;
+  if (opacity >= 100) return color;
+  if (opacity <= 0) return "transparent";
+  const match = color.match(/^#([0-9a-fA-F]{6})$/);
+  if (!match) return color;
+
+  const r = Number.parseInt(match[1].slice(0, 2), 16);
+  const g = Number.parseInt(match[1].slice(2, 4), 16);
+  const b = Number.parseInt(match[1].slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${opacity / 100})`;
+};
+
 export function BoxNode({ data }: NodeProps<BoxNodeType>) {
   const variant = data.variant ?? "default";
   const useCustomColors = data.useCustomColors === true;
@@ -18,8 +31,11 @@ export function BoxNode({ data }: NodeProps<BoxNodeType>) {
       : "rfNode";
   const customStyle: React.CSSProperties = useCustomColors
     ? {
-        backgroundColor: data.backgroundColor || undefined,
-        borderColor: data.borderColor || undefined,
+        backgroundColor: getColorWithOpacity(
+          data.backgroundColor,
+          data.backgroundOpacity ?? 100,
+        ),
+        borderColor: getColorWithOpacity(data.borderColor, data.borderOpacity ?? 100),
         color: data.textColor || undefined,
       }
     : {};

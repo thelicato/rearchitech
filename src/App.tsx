@@ -166,6 +166,12 @@ const toText = (value: unknown, fallback = "") =>
 const toBoolean = (value: unknown, fallback: boolean) =>
   typeof value === "boolean" ? value : fallback;
 
+const toNumber = (value: unknown, fallback: number) => {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
 const cloneFlowValue = <T,>(value: T): T => {
   try {
     return structuredClone(value);
@@ -287,6 +293,23 @@ const toDrawioColor = (value: unknown, fallback: string) => {
   return isHexColor(color) ? color : fallback;
 };
 
+const toDrawioColorWithAlpha = (
+  value: unknown,
+  opacity: number,
+  fallback: string,
+) => {
+  const color = toDrawioColor(value, fallback);
+  const alpha = Math.max(0, Math.min(100, opacity)) / 100;
+  if (alpha >= 1) return color;
+  const rgb = color.match(/^#([0-9a-fA-F]{6})$/);
+  if (!rgb) return color;
+
+  const r = Number.parseInt(rgb[1].slice(0, 2), 16);
+  const g = Number.parseInt(rgb[1].slice(2, 4), 16);
+  const b = Number.parseInt(rgb[1].slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
+
 const toSvgColor = (value: string, fallback: string) => {
   if (isHexColor(value)) return value;
 
@@ -329,16 +352,18 @@ const getRelativeLuminance = (hex: string) => {
 };
 
 const getGroupBorderColor = (color: string) =>
-  getRelativeLuminance(color) < 0.42
+  color === "transparent"
+    ? "transparent"
+    : getRelativeLuminance(color) < 0.42
     ? mixColor(color, "#ffffff", 0.45)
     : mixColor(color, "#000000", 0.35);
 
 const getBoxDrawioColors = (data: BoxNodeData) => {
   if (data.useCustomColors === true) {
     return {
-      fill: toDrawioColor(data.backgroundColor, "#4b5c6b"),
+      fill: toDrawioColorWithAlpha(data.backgroundColor, data.backgroundOpacity ?? 100, "#4b5c6b"),
       font: toDrawioColor(data.textColor, "#ffffff"),
-      stroke: toDrawioColor(data.borderColor, "#ffffff"),
+      stroke: toDrawioColorWithAlpha(data.borderColor, data.borderOpacity ?? 100, "#ffffff"),
     };
   }
 
@@ -606,7 +631,8 @@ const getSvgGroupTitle = (layout: NodeExportLayout, bounds: ExportBounds) => {
   const { x, y } = getSvgNodeOrigin(layout, bounds);
   const color = toDrawioColor(layout.node.data.color, "#2f6f8f");
   const borderColor = getGroupBorderColor(color);
-  const titleColor = getRelativeLuminance(color) < 0.42 ? "#ffffff" : "#111827";
+  const titleColor =
+    color === "transparent" ? "#111827" : getRelativeLuminance(color) < 0.42 ? "#ffffff" : "#111827";
   const placement = normalizeGroupTitlePlacement(layout.node.data.titlePlacement);
   const position = normalizeGroupTitlePosition(
     layout.node.data.titlePosition,
@@ -749,6 +775,22 @@ const getSvgDiamondNode = (layout: NodeExportLayout, bounds: ExportBounds) => {
   const cx = x + layout.width / 2;
   const cy = y + layout.height / 2;
   const lines = wrapSvgText(toText(layout.node.data.label), 8);
+  const background =
+    layout.node.data.useCustomColors === true
+      ? toDrawioColorWithAlpha(
+          layout.node.data.backgroundColor,
+          layout.node.data.backgroundOpacity ?? 100,
+          "#4b5c6b",
+        )
+      : "#4b5c6b";
+  const stroke =
+    layout.node.data.useCustomColors === true
+      ? toDrawioColorWithAlpha(layout.node.data.borderColor, layout.node.data.borderOpacity ?? 100, "#687987")
+      : "#687987";
+  const textFill =
+    layout.node.data.useCustomColors === true
+      ? toDrawioColor(layout.node.data.textColor, "#f5f7fb")
+      : "#f5f7fb";
 
   return [
     `<g>`,
@@ -756,12 +798,12 @@ const getSvgDiamondNode = (layout: NodeExportLayout, bounds: ExportBounds) => {
       cy - size / 2,
     )}" width="${formatNumber(size)}" height="${formatNumber(
       size,
-    )}" rx="12" fill="#4b5c6b" stroke="#687987" transform="rotate(45 ${formatNumber(
+    )}" rx="12" fill="${background}" stroke="${stroke}" transform="rotate(45 ${formatNumber(
       cx,
     )} ${formatNumber(cy)})" filter="url(#nodeShadow)"/>`,
     getSvgText({
       anchor: "middle",
-      fill: "#f5f7fb",
+      fill: textFill,
       fontSize: 11,
       fontWeight: 800,
       lineHeight: 12,
@@ -779,6 +821,8 @@ const getSvgGroupNode = (layout: NodeExportLayout, bounds: ExportBounds) => {
   const { x, y } = getSvgNodeOrigin(layout, bounds);
   const color = toDrawioColor(layout.node.data.color, "#2f6f8f");
   const borderColor = getGroupBorderColor(color);
+  const backgroundOpacity = ((layout.node.data.backgroundOpacity ?? 100) / 100) * 0.2;
+  const borderOpacity = (layout.node.data.borderOpacity ?? 100) / 100;
 
   return [
     `<g>`,
@@ -786,7 +830,7 @@ const getSvgGroupNode = (layout: NodeExportLayout, bounds: ExportBounds) => {
       layout.width,
     )}" height="${formatNumber(
       layout.height,
-    )}" rx="8" fill="${color}" fill-opacity="0.2" stroke="${borderColor}" stroke-width="2"/>`,
+    )}" rx="8" fill="${color}" fill-opacity="${backgroundOpacity}" stroke="${borderColor}" stroke-opacity="${borderOpacity}" stroke-width="2"/>`,
     getSvgGroupTitle(layout, bounds),
     `</g>`,
   ].join("");
@@ -857,6 +901,8 @@ const sanitizeNodeData = (type: ToolboxNodeType, data: unknown): AppNode["data"]
       title: toText(safeData.title, "Group"),
       titlePlacement: normalizeGroupTitlePlacement(safeData.titlePlacement),
       titlePosition: normalizeGroupTitlePosition(safeData.titlePosition, safeData.titleSide),
+      backgroundOpacity: toNumber(safeData.backgroundOpacity, 100),
+      borderOpacity: toNumber(safeData.borderOpacity, 100),
     };
   }
 
@@ -872,7 +918,15 @@ const sanitizeNodeData = (type: ToolboxNodeType, data: unknown): AppNode["data"]
   }
 
   if (type === "diamond") {
-    return { label: toText(safeData.label, "Decision") };
+    return {
+      label: toText(safeData.label, "Decision"),
+      useCustomColors: toBoolean(safeData.useCustomColors, false),
+      backgroundColor: toText(safeData.backgroundColor, "#4b5c6b"),
+      borderColor: toText(safeData.borderColor, "#687987"),
+      textColor: toText(safeData.textColor, "#f5f7fb"),
+      backgroundOpacity: toNumber(safeData.backgroundOpacity, 100),
+      borderOpacity: toNumber(safeData.borderOpacity, 100),
+    };
   }
 
   const variant = toText(safeData.variant, "default");
@@ -883,7 +937,9 @@ const sanitizeNodeData = (type: ToolboxNodeType, data: unknown): AppNode["data"]
     subtitle: toText(safeData.subtitle),
     content: toText(safeData.content, "Add details"),
     backgroundColor: toText(safeData.backgroundColor, "#4b5c6b"),
-    borderColor: toText(safeData.borderColor, "rgba(255,255,255,0.12)"),
+    borderColor: toText(safeData.borderColor, "#ffffff"),
+    backgroundOpacity: toNumber(safeData.backgroundOpacity, 100),
+    borderOpacity: toNumber(safeData.borderOpacity, 100),
     imageUrl: toText(safeData.imageUrl),
     imageAlt: toText(safeData.imageAlt),
     imageHasBackground: toBoolean(safeData.imageHasBackground, true),
@@ -2553,13 +2609,85 @@ export default function App() {
               <div className="toolboxTitle">Selected</div>
 
               {selectedNode.type === "diamond" ? (
-                <label className="toolboxField">
-                  <span>Label</span>
-                  <input
-                    value={toText(selectedNode.data.label)}
-                    onChange={(event) => updateSelectedNodeData("label", event.target.value)}
-                  />
-                </label>
+                <>
+                  <label className="toolboxField">
+                    <span>Label</span>
+                    <input
+                      value={toText(selectedNode.data.label)}
+                      onChange={(event) => updateSelectedNodeData("label", event.target.value)}
+                    />
+                  </label>
+                  <label className="toolboxCheck">
+                    <input
+                      type="checkbox"
+                      checked={selectedNode.data.useCustomColors === true}
+                      onChange={(event) =>
+                        updateSelectedNodeData("useCustomColors", event.target.checked)
+                      }
+                    />
+                    <span>Custom colors</span>
+                  </label>
+                  {selectedNode.data.useCustomColors === true ? (
+                    <>
+                      <label className="toolboxField">
+                        <span>Background</span>
+                        <input
+                          type="color"
+                          value={toColorInput(selectedNode.data.backgroundColor, "#4b5c6b")}
+                          onChange={(event) =>
+                            updateSelectedNodeData("backgroundColor", event.target.value)
+                          }
+                        />
+                      </label>
+                      <label className="toolboxField">
+                        <span>Background transparency</span>
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          value={toNumber(selectedNode.data.backgroundOpacity, 100)}
+                          onChange={(event) =>
+                            updateSelectedNodeData("backgroundOpacity", event.target.value)
+                          }
+                        />
+                        <span>{toNumber(selectedNode.data.backgroundOpacity, 100)}%</span>
+                      </label>
+                      <label className="toolboxField">
+                        <span>Border</span>
+                        <input
+                          type="color"
+                          value={toColorInput(selectedNode.data.borderColor, "#687987")}
+                          onChange={(event) =>
+                            updateSelectedNodeData("borderColor", event.target.value)
+                          }
+                        />
+                      </label>
+                      <label className="toolboxField">
+                        <span>Border transparency</span>
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          value={toNumber(selectedNode.data.borderOpacity, 100)}
+                          onChange={(event) =>
+                            updateSelectedNodeData("borderOpacity", event.target.value)
+                          }
+                        />
+                        <span>{toNumber(selectedNode.data.borderOpacity, 100)}%</span>
+                      </label>
+                      <label className="toolboxField">
+                        <span>Text</span>
+                        <input
+                          type="color"
+                          value={toColorInput(selectedNode.data.textColor, "#f5f7fb")}
+                          onChange={(event) =>
+                            updateSelectedNodeData("textColor", event.target.value)
+                          }
+                        />
+                      </label>
+                    </>
+                  ) : null}
+                </>
               ) : null}
 
               {selectedNode.type === "group" ? (
@@ -2765,6 +2893,19 @@ export default function App() {
                         />
                       </label>
                       <label className="toolboxField">
+                        <span>Background transparency</span>
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          value={toNumber(selectedNode.data.backgroundOpacity, 100)}
+                          onChange={(event) =>
+                            updateSelectedNodeData("backgroundOpacity", event.target.value)
+                          }
+                        />
+                        <span>{toNumber(selectedNode.data.backgroundOpacity, 100)}%</span>
+                      </label>
+                      <label className="toolboxField">
                         <span>Border</span>
                         <input
                           type="color"
@@ -2773,6 +2914,19 @@ export default function App() {
                             updateSelectedNodeData("borderColor", event.target.value)
                           }
                         />
+                      </label>
+                      <label className="toolboxField">
+                        <span>Border transparency</span>
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          value={toNumber(selectedNode.data.borderOpacity, 100)}
+                          onChange={(event) =>
+                            updateSelectedNodeData("borderOpacity", event.target.value)
+                          }
+                        />
+                        <span>{toNumber(selectedNode.data.borderOpacity, 100)}%</span>
                       </label>
                       <label className="toolboxField">
                         <span>Text</span>
