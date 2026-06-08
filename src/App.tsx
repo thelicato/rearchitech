@@ -501,11 +501,11 @@ const getSvgText = ({
   if (lines.length === 0) return "";
 
   return [
-    `<text x="${formatNumber(x)}" y="${formatNumber(y)}" fill="${fill}" font-family="${SVG_FONT_STACK}" font-size="${fontSize}" font-weight="${fontWeight}" text-anchor="${anchor}">`,
+    `<text x="${formatNumber(x)}" y="${formatNumber(y)}" fill="${fill}" font-family="${SVG_FONT_STACK}" font-size="${fontSize}" font-weight="${fontWeight}" text-anchor="${anchor}" xml:space="preserve" style="white-space:pre">`,
     lines
       .map(
         (line, index) =>
-          `<tspan x="${formatNumber(x)}" dy="${index === 0 ? 0 : lineHeight}">${escapeXml(
+          `<tspan x="${formatNumber(x)}" y="${formatNumber(y + index * lineHeight)}" xml:space="preserve">${escapeXml(
             line,
           )}</tspan>`,
       )
@@ -880,7 +880,7 @@ const buildPortableSvg = (
 
   return [
     `<?xml version="1.0" encoding="UTF-8"?>`,
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`,
+    `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" xml:space="preserve" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`,
     `<defs><filter id="nodeShadow" x="-20%" y="-20%" width="140%" height="160%"><feDropShadow dx="0" dy="6" stdDeviation="7" flood-color="#000000" flood-opacity="0.35"/></filter>${svgEdges.defs}</defs>`,
     `<rect x="0" y="0" width="${width}" height="${height}" fill="${backgroundColor}"/>`,
     `<g id="edges">${svgEdges.paths}</g>`,
