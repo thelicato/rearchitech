@@ -1,4 +1,6 @@
-# Rearchitech
+<p align="center"><img src="logo.svg" alt="Rearchitech logo" width="120"></p>
+
+<h1 align="center">Rearchitech</h1>
 
 A lightweight, browser-based diagram editor for architecture sketches, flowcharts, and system maps. Build diagrams on an interactive canvas, shape the details, and export them for sharing or further editing.
 
